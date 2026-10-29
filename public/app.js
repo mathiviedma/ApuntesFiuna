@@ -32,7 +32,7 @@ const TIPO_TXT = { apunte: 'Apunte', examen: 'Examen', resumen: 'Resumen', pract
 const CARRERA_CORTA = { civil: 'Civil', electromecanica: 'Electromecánica' };
 const kb = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const iniciales = (n) => n.split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
-const fecha = (iso) => new Date(iso.replace(' ', 'T') + 'Z').toLocaleDateString('es-PY', { day: 'numeric', month: 'short', year: 'numeric' });
+const fecha = (iso) => new Date(iso).toLocaleDateString('es-PY', { day: 'numeric', month: 'short', year: 'numeric' });
 
 function opcionesMaterias(seleccionada = '', carrera = '') {
   let html = '';
@@ -281,15 +281,24 @@ async function vistaSubir(params) {
     const texto = btn.textContent;
     btn.disabled = true;
     btn.textContent = idEditar ? 'Guardando…' : 'Subiendo…';
-    const datos = new FormData(e.target);
-    if (!e.target.archivo.files.length) datos.delete('archivo');
+    const datos = Object.fromEntries(new FormData(e.target));
+    const archivo = e.target.archivo.files[0];
+    delete datos.archivo;
     try {
+      // El archivo va directo a Supabase Storage con una URL firmada (no pasa por el servidor).
+      if (archivo) {
+        const subida = await api('/api/apuntes/subida', { json: { mime: archivo.type, tamano: archivo.size } });
+        const r = await fetch(subida.url, { method: 'PUT', headers: { 'Content-Type': archivo.type }, body: archivo });
+        if (!r.ok) throw new Error('No se pudo subir el archivo. Probá de nuevo.');
+        datos.ruta = subida.ruta;
+        datos.archivo_nombre = archivo.name;
+      }
       if (idEditar) {
-        await api(`/api/apuntes/${idEditar}`, { method: 'PUT', body: datos });
+        await api(`/api/apuntes/${idEditar}`, { method: 'PUT', json: datos });
         aviso('Cambios guardados.');
         location.hash = '#/mis-apuntes';
       } else {
-        await api('/api/apuntes', { method: 'POST', body: datos });
+        await api('/api/apuntes', { json: datos });
         aviso('¡Listo! Gracias por compartir.');
         location.hash = `#/?materia=${e.target.materia_id.value}&orden=recientes`;
       }
