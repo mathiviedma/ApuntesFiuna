@@ -26,7 +26,21 @@ async function cargarFuente() {
 /** Devuelve [{ materia: string, nota: number|null }] tal como figuran en Notas finales. */
 export async function obtenerNotasFinales(credenciales) {
   const fuente = await cargarFuente();
-  return fuente(credenciales);
+  // En Vercel la función muere a los 60 s con un 504 mudo: cortamos antes para dar un mensaje claro.
+  const limiteMs = config.verificador === 'insweb' && process.env.VERCEL ? 50000 : 0;
+  if (!limiteMs) return fuente(credenciales);
+  let reloj;
+  const limite = new Promise((_, rechazar) => {
+    reloj = setTimeout(
+      () => rechazar(new ErrorVerificacion('insweb tardó demasiado en responder. Probá de nuevo en unos minutos.', 'timeout')),
+      limiteMs,
+    );
+  });
+  try {
+    return await Promise.race([fuente(credenciales), limite]);
+  } finally {
+    clearTimeout(reloj);
+  }
 }
 
 /** Nombres aceptados para una materia del catálogo (nombre + alias), normalizados. */
