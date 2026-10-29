@@ -7,8 +7,11 @@ export const config = {
   raiz,
   puerto: Number(process.env.PUERTO || 3000),
   secretoSesion: process.env.SECRETO_SESION || 'cambiar-este-secreto-en-produccion',
-  rutaDb: process.env.RUTA_DB || path.join(raiz, 'data', 'apuntes.db'),
-  carpetaArchivos: process.env.CARPETA_ARCHIVOS || path.join(raiz, 'uploads'),
+  // Postgres de Supabase. En Vercel usar la cadena del pooler (Transaction, puerto 6543).
+  databaseUrl: process.env.DATABASE_URL || '',
+  supabaseUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+  supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  bucket: process.env.SUPABASE_BUCKET || 'apuntes',
   maxMbArchivo: Number(process.env.MAX_MB_ARCHIVO || 20),
   // Máximo de alumnos con tutoría activa por tutor (sumando todas sus materias).
   cupoTutor: Number(process.env.CUPO_TUTOR || 5),
@@ -19,7 +22,7 @@ export const config = {
   insweb: {
     url: (process.env.INSWEB_URL || 'https://insweb.ing.una.py').replace(/\/$/, ''),
     timeoutMs: Number(process.env.INSWEB_TIMEOUT_MS || 30000),
-    // Opcional: usar un Chrome/Edge ya instalado en vez de descargar Chromium.
+    // En Vercel se usa @sparticuz/chromium automáticamente. Fuera de Vercel, opcional: usar un Chrome/Edge ya instalado en vez de descargar Chromium.
     //   INSWEB_CANAL=chrome | msedge     o     INSWEB_CHROMIUM=/ruta/al/ejecutable
     canal: process.env.INSWEB_CANAL || undefined,
     ejecutable: process.env.INSWEB_CHROMIUM || undefined,
