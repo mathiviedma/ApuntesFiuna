@@ -1,0 +1,26 @@
+{
+  "name": "apuntes-fiuna",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hackathon CPF 2026 · Reto 12: repositorio de apuntes por materia y matching de tutorías",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js",
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
+    "reset": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/reset.js",
+    "probar-insweb": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/probar-insweb.js",
+    "instalar-navegador": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.2"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

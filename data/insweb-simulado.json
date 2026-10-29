@@ -1,0 +1,23 @@
+{
+  "1111111": {
+    "_comentario": "Aprobó Cálculo 1 con 4 después de un aplazo (1). Debe verificarse igual.",
+    "password": "demo",
+    "notasFinales": [
+      { "materia": "CALCULO I", "nota": 1 },
+      { "materia": "CALCULO I", "nota": 4 },
+      { "materia": "ALGEBRA LINEAL", "nota": 5 },
+      { "materia": "MECANICA Y CALOR", "nota": 3 },
+      { "materia": "GEOMETRIA VECTORIAL", "nota": 2 },
+      { "materia": "ESTATICA", "nota": 4 }
+    ]
+  },
+  "2222222": {
+    "_comentario": "Aprobó Cálculo 1 con 3: no cumple. Física (MyC) con 5: cumple.",
+    "password": "demo",
+    "notasFinales": [
+      { "materia": "CALCULO I", "nota": 3 },
+      { "materia": "MECANICA Y CALOR", "nota": 5 },
+      { "materia": "DIBUJO TECNICO", "nota": 4 }
+    ]
+  }
+}

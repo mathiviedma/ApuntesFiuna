@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apuntes FIUNA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%231f3fd1%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-family=%22monospace%22 font-size=%2215%22 fill=%22white%22 text-anchor=%22middle%22%3E%26lt;/%26gt;%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="barra">
+    <div class="contenedor barra-int">
+      <a href="#/" class="marca"><span class="marca-tag">&lt;/&gt;</span> apuntes<span class="punto">.</span>fiuna</a>
+      <nav class="nav">
+        <a href="#/" data-ruta="/">Apuntes</a>
+        <a href="#/subir" data-ruta="/subir">Subir</a>
+        <a href="#/mis-apuntes" data-ruta="/mis-apuntes">Mis apuntes</a>
+        <a href="#/tutorias" data-ruta="/tutorias">Tutorías</a>
+        <a href="#/ser-tutor" data-ruta="/ser-tutor">Ser tutor</a>
+      </nav>
+      <div id="sesion" class="sesion"></div>
+    </div>
+  </header>
+
+  <main id="vista" class="contenedor"></main>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
