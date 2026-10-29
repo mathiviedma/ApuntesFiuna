@@ -5,8 +5,8 @@ const TIPOS = { apunte: 'apunte apuntes clase', examen: 'examen examenes', resum
 
 // Todo lo que el buscador debería encontrar, normalizado sin tildes:
 // "calculo" encuentra "Cálculo", "C1" encuentra Cálculo 1, "final 2025" encuentra el final de 2025.
-export function textoBusqueda({ titulo, descripcion, materiaId, tipo, periodo, anio }) {
-  const m = db.prepare('SELECT nombre, sigla, alias FROM materias WHERE id = ?').get(materiaId);
+export async function textoBusqueda({ titulo, descripcion, materiaId, tipo, periodo, anio }) {
+  const m = await db.get('SELECT nombre, sigla, alias FROM materias WHERE id = ?', materiaId);
   const alias = m ? JSON.parse(m.alias).join(' ') : '';
   return normalizar([titulo, descripcion, m?.nombre, m?.sigla, alias, TIPOS[tipo], periodo, anio].filter(Boolean).join(' '));
 }

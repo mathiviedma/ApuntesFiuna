@@ -20,7 +20,7 @@ import { ErrorVerificacion } from './index.js';
 
 async function cargarPlaywright() {
   try {
-    return await import('playwright');
+    return await import('playwright-core');
   } catch {
     throw new ErrorVerificacion(
       'Playwright no está instalado. Ejecutá "npm install" en la carpeta del proyecto.',
@@ -29,12 +29,31 @@ async function cargarPlaywright() {
   }
 }
 
+/**
+ * Opciones para lanzar Chromium. En Vercel (sin navegador instalado) se usa @sparticuz/chromium,
+ * un Chromium comprimido hecho para funciones serverless; en local, el que baja Playwright
+ * (o el Chrome/Edge indicado con INSWEB_CANAL / INSWEB_CHROMIUM).
+ */
+async function opcionesLanzamiento(debug) {
+  if (config.esVercel) {
+    const { default: sparticuz } = await import('@sparticuz/chromium');
+    return { headless: true, args: sparticuz.args, executablePath: await sparticuz.executablePath() };
+  }
+  return {
+    headless: !debug,
+    slowMo: debug ? 150 : 0,
+    channel: config.insweb.canal,
+    executablePath: config.insweb.ejecutable,
+  };
+}
+
 /** Verifica al arrancar que Chromium esté descargado, para avisar antes de la demo. */
 export async function navegadorDisponible() {
   try {
+    if (config.esVercel) return true; // Chromium viene con @sparticuz/chromium
     if (config.insweb.canal) return true; // usa el Chrome/Edge instalado
     if (config.insweb.ejecutable) return fs.existsSync(config.insweb.ejecutable);
-    const { chromium } = await import('playwright');
+    const { chromium } = await import('playwright-core');
     return fs.existsSync(chromium.executablePath());
   } catch {
     return false;
@@ -68,13 +87,8 @@ export async function obtenerNotasFinales({ usuario, password }, opciones = {}) 
   const log = (...a) => debug && console.log('  ·', ...a);
   let paso = 0;
 
-  const browser = await chromium
-    .launch({
-      headless: !debug,
-      slowMo: debug ? 150 : 0,
-      channel: config.insweb.canal,
-      executablePath: config.insweb.ejecutable,
-    })
+  const browser = await opcionesLanzamiento(debug)
+    .then((o) => chromium.launch(o))
     .catch((e) => {
     throw new ErrorVerificacion(
       `No se pudo abrir Chromium (${e.message.split('\n')[0]}). Ejecutá "npm run instalar-navegador".`,

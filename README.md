@@ -5,7 +5,7 @@ Cubre los cursos básicos (semestres 1 a 4) de la Malla 2023 de Ingeniería Civi
 
 ## 1. Instalar Node.js
 
-Se necesita **Node.js 22.13 o más nuevo** (la base de datos usa el SQLite que ya viene incluido en Node, así que no hay que instalar ningún motor aparte).
+Se necesita **Node.js 22.13 o más nuevo** (la base de datos es Postgres en Supabase y los archivos van a Supabase Storage; ver la sección de Supabase).
 
 **Windows** (PowerShell):
 ```powershell
@@ -32,12 +32,13 @@ npm --version
 ```bash
 cd apuntes-fiuna
 npm install
+npm run supabase:provisionar   # una sola vez: crea la base en Supabase y escribe .env (ver sección "Supabase y Vercel")
 npm start
 ```
 
 `npm install` también descarga Chromium (~150 MB, una sola vez), que se usa para leer las notas de insweb. Si ya tenés Google Chrome o Edge instalado, podés evitar la descarga: creá un `.env` con `INSWEB_CANAL=chrome` (o `msedge`) y ejecutá `npm install --ignore-scripts`.
 
-Abrí http://localhost:3000. La primera vez se cargan datos de demo (4 usuarios, 12 apuntes, 5 tutores).
+Abrí http://localhost:3000. El aprovisionamiento carga datos de demo (8 usuarios, 12 apuntes, 5 tutores).
 
 | Cuenta de demo | Contraseña | Rol |
 |---|---|---|
@@ -49,7 +50,8 @@ Abrí http://localhost:3000. La primera vez se cargan datos de demo (4 usuarios,
 Otros comandos:
 
 - `npm run dev`: reinicia el servidor solo cuando cambiás código.
-- `npm run reset`: borra la base y los archivos; al volver a arrancar se recargan los datos de demo.
+- `npm run migrar`: crea/actualiza tablas, catálogo de materias y bucket (idempotente). Con `-- --semilla` carga también los datos de demo si la base está vacía.
+- `npm run reset -- --si-estoy-seguro`: borra TODOS los datos y archivos de la base configurada en `.env`.
 
 ## Funciones
 
@@ -105,20 +107,58 @@ Si algo no coincide, con esos archivos se ajusta en minutos:
 ### Seguridad (el jurado va a preguntar)
 
 - Las credenciales de insweb se usan una vez dentro de la petición y se descartan. No se guardan en la base ni se escriben en logs.
-- Se limitan los intentos de verificación a 5 cada 15 minutos por usuario, para que la app no sirva para adivinar contraseñas de insweb.
+- Se limitan los intentos de verificación (5 libres, luego esperas de 2, 5 y 10 min; el contador vive en la base) por usuario, para que la app no sirva para adivinar contraseñas de insweb.
 - Se guarda solo un hash del usuario de insweb, para impedir que una misma cuenta de insweb verifique a dos usuarios distintos.
 - En producción tiene que correr sobre HTTPS.
 - **Limitación honesta:** pedirle a un alumno su contraseña de insweb en un sitio de terceros es un riesgo, y puede chocar con las normas de la facultad. La solución de fondo es que FIUNA exponga una forma oficial de verificar notas (OAuth o API). Conviene presentar el scraping como prueba de concepto de ese flujo.
 
+## Supabase y Vercel
+
+La app corre en Vercel (serverless), así que no guarda nada en disco: la base es **Postgres de Supabase** y los archivos van a un **bucket privado de Supabase Storage**. El navegador sube el archivo directo a Storage con una URL firmada (Vercel limita el cuerpo de las funciones a 4,5 MB) y la descarga redirige a una URL firmada de 60 s. La sesión es una cookie firmada, sin estado en el servidor.
+
+**Crear todo en Supabase** (con un token personal de https://supabase.com/dashboard/account/tokens):
+
+```bash
+SUPABASE_ACCESS_TOKEN=sbp_... npm run supabase:provisionar
+```
+
+Crea el proyecto, espera a que esté activo, lee las claves, escribe `.env` y `.env.vercel` (ambos en `.gitignore`), y ejecuta `npm run migrar -- --semilla`. Agregá `-- --mostrar` para ver los valores en pantalla. Revocá el token cuando termine.
+
+**Variables de entorno en Vercel** (Project → Settings → Environment Variables, o `vercel env add`):
+
+| Variable | Para qué |
+|---|---|
+| `DATABASE_URL` | Postgres de Supabase, pooler en modo transacción (puerto 6543) |
+| `SUPABASE_URL` | URL del proyecto (`https://<ref>.supabase.co`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | clave del servidor para Storage; **nunca** exponerla al navegador |
+| `SUPABASE_BUCKET` | nombre del bucket (`apuntes`) |
+| `SECRETO_SESION` | firma de la cookie de sesión (obligatoria en Vercel) |
+| `VERIFICADOR` | `insweb` (real) o `simulado` |
+| `DOMINIO_EMAIL` | opcional, p. ej. `fiuna.edu.py` |
+
+Con la CLI de Vercel, desde la carpeta del proyecto:
+
+```bash
+while IFS='=' read -r k v; do printf '%s' "$v" | vercel env add "$k" production; done < .env.vercel
+```
+
+La verificación contra insweb usa `@sparticuz/chromium` (Chromium para serverless); `vercel.json` le da 60 s a la función y la ubica en São Paulo (`gru1`), junto a la base. Si cambiás `src/materias.js`, ejecutá `npm run migrar` para sincronizar el catálogo.
+
 ## 5. Estructura
 
 ```
-server.js                  API (Express) y archivos estáticos
-src/db.js                  esquema SQLite y carga del catálogo
+server.js                  arranque local (npm start)
+api/index.js               entrada serverless de Vercel
+src/app.js                 API (Express) y archivos estáticos
+src/db.js                  conexión a Postgres (pg)
+src/almacen.js             Supabase Storage (URLs firmadas)
+db/esquema.sql             esquema Postgres
+scripts/migrar.js          aplica esquema, catálogo y bucket
+scripts/supabase-provisionar.js  crea el proyecto de Supabase y las variables de entorno
 src/materias.js            materias de los semestres 1–4 (Civil + Electromecánica)
 src/verificador/index.js   regla de la nota 4–5 y comparación de nombres
 src/verificador/simulado.js  insweb simulado (data/insweb-simulado.json)
-src/verificador/insweb.js    insweb real con Playwright (/login → /main/NotasFinales)
+src/verificador/insweb.js    insweb real con Playwright (en Vercel usa @sparticuz/chromium) (/login → /main/NotasFinales)
 src/semilla.js             datos de demo
 public/                    frontend (HTML + JS sin build)
 ```

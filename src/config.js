@@ -7,8 +7,15 @@ export const config = {
   raiz,
   puerto: Number(process.env.PUERTO || 3000),
   secretoSesion: process.env.SECRETO_SESION || 'cambiar-este-secreto-en-produccion',
-  rutaDb: process.env.RUTA_DB || path.join(raiz, 'data', 'apuntes.db'),
-  carpetaArchivos: process.env.CARPETA_ARCHIVOS || path.join(raiz, 'uploads'),
+  esVercel: Boolean(process.env.VERCEL),
+  // Postgres (Supabase). En Vercel usar la cadena del pooler en modo transacción (puerto 6543).
+  databaseUrl: process.env.DATABASE_URL || '',
+  // Supabase Storage: los archivos se guardan en un bucket privado y se sirven con URLs firmadas.
+  supabase: {
+    url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    bucket: process.env.SUPABASE_BUCKET || 'apuntes',
+  },
   maxMbArchivo: Number(process.env.MAX_MB_ARCHIVO || 20),
   // Máximo de alumnos con tutoría activa por tutor (sumando todas sus materias).
   cupoTutor: Number(process.env.CUPO_TUTOR || 5),

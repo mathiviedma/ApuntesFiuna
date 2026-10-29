@@ -1,10 +1,8 @@
 // Datos de ejemplo para que la demo arranque con contenido.
 // Se cargan solo si la base está vacía. Contraseña de todas las cuentas: demo1234
-import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
 import { db, transaccion } from './db.js';
-import { config } from './config.js';
+import { subir } from './almacen.js';
 import { hashPassword } from './auth.js';
 import { textoBusqueda } from './busqueda.js';
 
@@ -71,55 +69,65 @@ function pdfSimple(lineas) {
   return Buffer.from(out, 'latin1');
 }
 
-export function cargarSemillaSiVacia() {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM usuarios').get();
+/** Carga los datos de demo si la base no tiene usuarios. Los PDF de ejemplo se suben a Supabase Storage. */
+export async function cargarSemillaSiVacia() {
+  const { n } = await db.get('SELECT COUNT(*) AS n FROM usuarios');
   if (n > 0) return false;
 
-  const idMateria = (nombre) => db.prepare('SELECT id FROM materias WHERE nombre = ?').get(nombre).id;
+  const idMateria = async (tx, nombre) => (await tx.get('SELECT id FROM materias WHERE nombre = ?', nombre)).id;
   const ids = {};
 
-  transaccion(() => {
-    const insU = db.prepare(
-      'INSERT INTO usuarios (nombre, email, pass_hash, carrera, whatsapp) VALUES (?, ?, ?, ?, ?) RETURNING id',
-    );
+  await transaccion(async (tx) => {
     for (const u of USUARIOS) {
-      ids[u.email.split('@')[0]] = insU.get(u.nombre, u.email, hashPassword('demo1234'), u.carrera, u.whatsapp).id;
+      ids[u.email.split('@')[0]] = (
+        await tx.get(
+          'INSERT INTO usuarios (nombre, email, pass_hash, carrera, whatsapp) VALUES (?, ?, ?, ?, ?) RETURNING id',
+          u.nombre, u.email, hashPassword('demo1234'), u.carrera, u.whatsapp,
+        )
+      ).id;
     }
 
-    const insA = db.prepare(`INSERT INTO apuntes
-      (usuario_id, materia_id, tipo, titulo, descripcion, anio, periodo, archivo, archivo_nombre, mime, tamano, busqueda, creado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'application/pdf', ?, ?, datetime('now', ?))
-      RETURNING id`);
     const apunteIds = [];
-    APUNTES.forEach(([autor, materia, tipo, titulo, desc, anio, periodo], i) => {
+    for (const [i, [autor, materia, tipo, titulo, desc, anio, periodo]] of APUNTES.entries()) {
       const pdf = pdfSimple([titulo, materia, `${tipo}${periodo ? ' - ' + periodo : ''} ${anio ?? ''}`, '', 'Archivo de ejemplo (demo).']);
       const archivo = `${crypto.randomUUID()}.pdf`;
-      fs.writeFileSync(path.join(config.carpetaArchivos, archivo), pdf);
-      const mId = idMateria(materia);
+      await subir(archivo, pdf, 'application/pdf');
+      const mId = await idMateria(tx, materia);
+      const busqueda = await textoBusqueda({ titulo, descripcion: desc, materiaId: mId, tipo, periodo, anio });
       apunteIds.push(
-        insA.get(ids[autor], mId, tipo, titulo, desc, anio, periodo, archivo,
-          `${titulo.replace(/[^\p{L}\p{N} ]+/gu, '').trim().replace(/\s+/g, '_')}.pdf`, pdf.length,
-          textoBusqueda({ titulo, descripcion: desc, materiaId: mId, tipo, periodo, anio }),
-          `-${(APUNTES.length - i) * 7} hours`).id,
+        (
+          await tx.get(
+            `INSERT INTO apuntes
+              (usuario_id, materia_id, tipo, titulo, descripcion, anio, periodo, archivo, archivo_nombre, mime, tamano, busqueda, creado)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'application/pdf', ?, ?, now() - (? * interval '1 hour'))
+             RETURNING id`,
+            ids[autor], mId, tipo, titulo, desc, anio, periodo, archivo,
+            `${titulo.replace(/[^\p{L}\p{N} ]+/gu, '').trim().replace(/\s+/g, '_')}.pdf`, pdf.length,
+            busqueda,
+            (APUNTES.length - i) * 7,
+          )
+        ).id,
       );
-    });
+    }
 
     // algunos "me gusta" para que el orden por popularidad se note
-    const insV = db.prepare('INSERT INTO votos (apunte_id, usuario_id, valor) VALUES (?, ?, 1)');
-    [[0, 'bruno.gimenez'], [0, 'diego.ramirez'], [0, 'lucia.fernandez'], [0, 'matias.duarte'], [1, 'bruno.gimenez'],
-     [1, 'sofia.acosta'], [2, 'diego.ramirez'], [7, 'carla.ortiz'], [7, 'tomas.villalba'], [5, 'lucia.fernandez']]
-      .forEach(([i, u]) => insV.run(apunteIds[i], ids[u]));
+    for (const [i, u] of [[0, 'bruno.gimenez'], [0, 'diego.ramirez'], [0, 'lucia.fernandez'], [0, 'matias.duarte'], [1, 'bruno.gimenez'],
+      [1, 'sofia.acosta'], [2, 'diego.ramirez'], [7, 'carla.ortiz'], [7, 'tomas.villalba'], [5, 'lucia.fernandez']])
+      await tx.run('INSERT INTO votos (apunte_id, usuario_id, valor) VALUES (?, ?, 1)', apunteIds[i], ids[u]);
 
-    const insT = db.prepare(`INSERT INTO postulaciones (usuario_id, materia_id, estado, nota, detalle, verificado_en)
-      VALUES (?, ?, 'verificado', ?, ?, datetime('now'))`);
-    for (const [u, materia, nota] of TUTORES) insT.run(ids[u], idMateria(materia), nota, `Nota ${nota} (datos de demo).`);
+    for (const [u, materia, nota] of TUTORES)
+      await tx.run(
+        `INSERT INTO postulaciones (usuario_id, materia_id, estado, nota, detalle, verificado_en)
+         VALUES (?, ?, 'verificado', ?, ?, now())`,
+        ids[u], await idMateria(tx, materia), nota, `Nota ${nota} (datos de demo).`,
+      );
 
     // Tutorías en curso: Carla tiene 2 de 5 cupos ocupados; Diego está lleno (5 de 5).
-    const insTut = db.prepare('INSERT INTO tutorias (tutor_id, alumno_id, materia_id) VALUES (?, ?, ?)');
-    for (const a of ['bruno.gimenez', 'lucia.fernandez']) insTut.run(ids['carla.ortiz'], ids[a], idMateria('Cálculo 1'));
-    for (const a of ['bruno.gimenez', 'lucia.fernandez', 'matias.duarte'])
-      insTut.run(ids['diego.ramirez'], ids[a], idMateria('Cálculo 1'));
-    for (const a of ['sofia.acosta', 'tomas.villalba']) insTut.run(ids['diego.ramirez'], ids[a], idMateria('Estática'));
+    const tutoria = async (tutor, alumno, materia) =>
+      tx.run('INSERT INTO tutorias (tutor_id, alumno_id, materia_id) VALUES (?, ?, ?)', ids[tutor], ids[alumno], await idMateria(tx, materia));
+    for (const al of ['bruno.gimenez', 'lucia.fernandez']) await tutoria('carla.ortiz', al, 'Cálculo 1');
+    for (const al of ['bruno.gimenez', 'lucia.fernandez', 'matias.duarte']) await tutoria('diego.ramirez', al, 'Cálculo 1');
+    for (const al of ['sofia.acosta', 'tomas.villalba']) await tutoria('diego.ramirez', al, 'Estática');
   });
   return true;
 }
