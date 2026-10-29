@@ -18,9 +18,12 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { ErrorVerificacion } from './index.js';
 
+// En Vercel (Linux sin navegador instalado) se usa el Chromium empaquetado de @sparticuz/chromium.
+const enVercel = Boolean(process.env.VERCEL);
+
 async function cargarPlaywright() {
   try {
-    return await import('playwright');
+    return await import('playwright-core');
   } catch {
     throw new ErrorVerificacion(
       'Playwright no está instalado. Ejecutá "npm install" en la carpeta del proyecto.',
@@ -32,9 +35,10 @@ async function cargarPlaywright() {
 /** Verifica al arrancar que Chromium esté descargado, para avisar antes de la demo. */
 export async function navegadorDisponible() {
   try {
+    if (enVercel) return true;
     if (config.insweb.canal) return true; // usa el Chrome/Edge instalado
     if (config.insweb.ejecutable) return fs.existsSync(config.insweb.ejecutable);
-    const { chromium } = await import('playwright');
+    const { chromium } = await import('playwright-core');
     return fs.existsSync(chromium.executablePath());
   } catch {
     return false;
@@ -68,13 +72,19 @@ export async function obtenerNotasFinales({ usuario, password }, opciones = {}) 
   const log = (...a) => debug && console.log('  ·', ...a);
   let paso = 0;
 
+  const opcionesLanzamiento = enVercel
+    ? await (async () => {
+        const sparticuz = (await import('@sparticuz/chromium')).default;
+        return { headless: true, args: sparticuz.args, executablePath: await sparticuz.executablePath() };
+      })()
+    : {
+        headless: !debug,
+        slowMo: debug ? 150 : 0,
+        channel: config.insweb.canal,
+        executablePath: config.insweb.ejecutable,
+      };
   const browser = await chromium
-    .launch({
-      headless: !debug,
-      slowMo: debug ? 150 : 0,
-      channel: config.insweb.canal,
-      executablePath: config.insweb.ejecutable,
-    })
+    .launch(opcionesLanzamiento)
     .catch((e) => {
     throw new ErrorVerificacion(
       `No se pudo abrir Chromium (${e.message.split('\n')[0]}). Ejecutá "npm run instalar-navegador".`,

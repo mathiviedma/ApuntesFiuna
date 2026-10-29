@@ -5,7 +5,7 @@ Cubre los cursos básicos (semestres 1 a 4) de la Malla 2023 de Ingeniería Civi
 
 ## 1. Instalar Node.js
 
-Se necesita **Node.js 22.13 o más nuevo** (la base de datos usa el SQLite que ya viene incluido en Node, así que no hay que instalar ningún motor aparte).
+Se necesita **Node.js 22.13 o más nuevo** y un proyecto de Supabase (ver la sección de despliegue al final).
 
 **Windows** (PowerShell):
 ```powershell
@@ -49,7 +49,7 @@ Abrí http://localhost:3000. La primera vez se cargan datos de demo (4 usuarios,
 Otros comandos:
 
 - `npm run dev`: reinicia el servidor solo cuando cambiás código.
-- `npm run reset`: borra la base y los archivos; al volver a arrancar se recargan los datos de demo.
+- `npm run db:init`: aplica el esquema en Supabase, carga las materias y crea el bucket (`-- --demo` agrega datos de ejemplo).
 
 ## Funciones
 
@@ -114,7 +114,7 @@ Si algo no coincide, con esos archivos se ajusta en minutos:
 
 ```
 server.js                  API (Express) y archivos estáticos
-src/db.js                  esquema SQLite y carga del catálogo
+src/db.js                  conexión a Postgres (Supabase)
 src/materias.js            materias de los semestres 1–4 (Civil + Electromecánica)
 src/verificador/index.js   regla de la nota 4–5 y comparación de nombres
 src/verificador/simulado.js  insweb simulado (data/insweb-simulado.json)
@@ -149,3 +149,22 @@ Un tutor visible es una postulación con `estado = 'verificado'` y `disponible =
 | POST | `/api/postulaciones` `{materias:[ids], whatsapp?}` | paso 1: inscripción |
 | POST | `/api/postulaciones/verificar` `{usuario, password}` | paso 2: verificación en insweb |
 | PATCH | `/api/postulaciones/:id` `{disponible}` | pausar o reactivar como tutor |
+
+
+## Despliegue en Vercel + Supabase
+
+La app guarda todo fuera del servidor, así que corre en Vercel (serverless):
+
+| Qué | Dónde |
+|---|---|
+| Base de datos | Postgres de Supabase (`supabase/schema.sql`) |
+| Archivos | Supabase Storage, bucket privado `apuntes` (el navegador sube directo con URL firmada) |
+| Sesión | Cookie firmada (`SECRETO_SESION`) |
+| Límite de intentos de insweb | Tabla `intentos_verificacion` |
+| Lectura de insweb | Playwright + `@sparticuz/chromium` (función de hasta 60 s, ver `vercel.json`) |
+
+1. En Supabase: SQL Editor → pegar y ejecutar `supabase/migracion-completa.sql` (o `npm run db:init`).
+2. En Vercel → Settings → Environment Variables: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, `SECRETO_SESION` (y `VERIFICADOR`, `DOMINIO_EMAIL` si corresponde).
+3. Deploy. Datos de demo opcionales: `npm run db:init -- --demo`.
+
+Local: copiar `.env.example` a `.env`, completar las variables y `npm run dev`. Ya no existe `npm run reset` ni la carpeta `uploads/`.
