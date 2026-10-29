@@ -1,2 +1,0 @@
-# ApuntesFiuna
-apuntes fiuna web
