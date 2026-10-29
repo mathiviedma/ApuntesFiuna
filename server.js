@@ -445,17 +445,37 @@ app.post('/api/postulaciones', requiereLogin, (req, res) => {
 // Paso 2: verificación contra insweb (las credenciales se usan una vez y se descartan)
 const verificando = new Set();
 // Límite de intentos: evita que la app se use para adivinar contraseñas de insweb.
-const intentos = new Map(); // usuarioId -> [timestamps]
-const MAX_INTENTOS = 5;
-const VENTANA_MS = 15 * 60 * 1000;
-function puedeIntentar(uid) {
+// Los primeros 5 intentos son libres. Después, cada intento exige una espera que va creciendo:
+//   tras el 5.º intento: 2 min · tras el 6.º: 5 min · tras el 7.º (y siguientes): 10 min.
+// El contador se borra si la verificación sale bien, o tras 30 minutos sin intentar.
+const INTENTOS_LIBRES = 5;
+const ESPERAS_MS = [2, 5, 10].map((m) => m * 60 * 1000); // para los intentos 5, 6 y 7+
+const OLVIDAR_MS = 30 * 60 * 1000;
+const intentos = new Map(); // usuarioId -> { n, ultimo, hasta }
+
+/** Devuelve 0 si puede intentar (y lo registra), o los ms que le faltan esperar. */
+function intentar(uid) {
   const ahora = Date.now();
-  const lista = (intentos.get(uid) ?? []).filter((t) => ahora - t < VENTANA_MS);
-  intentos.set(uid, lista);
-  if (lista.length >= MAX_INTENTOS) return false;
-  lista.push(ahora);
-  return true;
+  let e = intentos.get(uid);
+  if (!e || ahora - e.ultimo > OLVIDAR_MS) e = { n: 0, ultimo: ahora, hasta: 0 };
+  if (ahora < e.hasta) {
+    intentos.set(uid, e);
+    return e.hasta - ahora;
+  }
+  e.n += 1;
+  e.ultimo = ahora;
+  if (e.n >= INTENTOS_LIBRES) e.hasta = ahora + ESPERAS_MS[Math.min(e.n - INTENTOS_LIBRES, ESPERAS_MS.length - 1)];
+  intentos.set(uid, e);
+  return 0;
 }
+
+function textoEspera(ms) {
+  const min = Math.floor(ms / 60000);
+  const seg = Math.ceil((ms % 60000) / 1000);
+  if (min === 0) return `${seg} segundo${seg === 1 ? '' : 's'}`;
+  return seg === 60 || seg === 0 ? `${seg === 60 ? min + 1 : min} minuto${(seg === 60 ? min + 1 : min) === 1 ? '' : 's'}` : `${min} min ${seg} s`;
+}
+
 app.post('/api/postulaciones/verificar', requiereLogin, async (req, res) => {
   const uid = req.session.usuarioId;
   const usuario = String(req.body?.usuario ?? '').trim();
@@ -475,10 +495,15 @@ app.post('/api/postulaciones/verificar', requiereLogin, async (req, res) => {
   if (otro) return res.status(409).json({ error: 'Esa cuenta de insweb ya se usó para verificar otro usuario.' });
 
   if (verificando.has(uid)) return res.status(429).json({ error: 'Ya hay una verificación en curso.' });
-  if (!puedeIntentar(uid)) return res.status(429).json({ error: 'Demasiados intentos. Esperá 15 minutos.' });
+  const espera = intentar(uid);
+  if (espera) {
+    res.setHeader('Retry-After', Math.ceil(espera / 1000));
+    return res.status(429).json({ error: `Demasiados intentos. Probá de nuevo en ${textoEspera(espera)}.` });
+  }
   verificando.add(uid);
   try {
     const notas = await obtenerNotasFinales({ usuario, password });
+    intentos.delete(uid); // credenciales correctas: se reinicia el contador
     const resultados = transaccion(() => {
       db.prepare('UPDATE usuarios SET insweb_id = ? WHERE id = ?').run(insId, uid);
       const upd = db.prepare(
